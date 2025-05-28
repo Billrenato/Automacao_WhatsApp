@@ -1,105 +1,128 @@
-# Importa as bibliotecas necessárias
-import tkinter as tk  # Biblioteca para criar interfaces gráficas
-from tkinter import filedialog  # Biblioteca para criar diálogos de arquivo
-import requests  # Biblioteca para fazer requisições HTTP
-import configparser
+import tkinter as tk
+from tkinter import filedialog
+import requests
+import mimetypes
+
+
+# Função para fazer upload do arquivo e obter o media_id
+def upload_arquivo(arquivo_path, access_token, phone_number_id):
+    url = f"https://graph.facebook.com/v22.0/{phone_number_id}/media"
+    mime_type, _ = mimetypes.guess_type(arquivo_path)
+
+    files = {
+        'file': (arquivo_path.split("/")[-1], open(arquivo_path, 'rb'), mime_type)
+    }
+
+    data = {
+        'messaging_product': 'whatsapp'
+    }
+
+    headers = {
+        'Authorization': f'Bearer {access_token}'
+    }
+
+    response = requests.post(url, headers=headers, files=files, data=data)
+
+    if response.status_code == 200:
+        media_id = response.json()['id']
+        return media_id
+    else:
+        resultado_label.config(text=f"Erro no upload: {response.text}")
+        print(response.text)
+        return None
+
 
 # Função para enviar o arquivo via WhatsApp
-def enviar_arquivo(arquivo_path, destinatario):
-    # Define a URL da API do WhatsApp
-    api_url = "https://graph.facebook.com/v13.0/messages"
-    
-    # Define o token de acesso e o ID do número de telefone
-    # Lê o arquivo de configuração
-    config = configparser.ConfigParser()
-    config.read('config.ini')
-    access_token = config['WHATSAPP']['access_token']
-    phone_number_id = config['WHATSAPP']['phone_number_id']
+def enviar_arquivo(arquivo_path, destinatario, access_token, phone_number_id):
+    # Primeiro faz upload do arquivo
+    media_id = upload_arquivo(arquivo_path, access_token, phone_number_id)
 
-    
+    if not media_id:
+        return
 
-    # Define os cabeçalhos da requisição
+    # Envia a mensagem com o documento
+    url = f"https://graph.facebook.com/v22.0/{phone_number_id}/messages"
+
     headers = {
-        "Authorization": f"Bearer {access_token}",  # Token de acesso
-        "Content-Type": "application/pdf"  # Tipo do arquivo
+        'Authorization': f'Bearer {access_token}',
+        'Content-Type': 'application/json'
     }
 
-    # Abre o arquivo em modo binário
-    files = {
-        "file": open(arquivo_path, "rb")
-    }
-
-    # Define os dados da requisição
     data = {
-        "messaging_product": "whatsapp",  # Produto de mensagens
-        "to": destinatario,  # Número do destinatário
-        "type": "document",  # Tipo da mensagem
+        "messaging_product": "whatsapp",
+        "recipient_type": "individual",
+        "to": destinatario,
+        "type": "document",
         "document": {
-            "filename": arquivo_path.split("/")[-1]  # Nome do arquivo
+            "id": media_id,
+            "filename": arquivo_path.split("/")[-1],
+            "caption": "Sua confirmação de pedido (PDF)"
         }
     }
 
-    # Faz a requisição POST para enviar o arquivo
-    response = requests.post(api_url, headers=headers, files=files, data=data)
+    response = requests.post(url, headers=headers, json=data)
 
-    # Verifica se a requisição foi bem-sucedida
-    if response.status_code == 201:
-        # Atualiza o texto do label com o resultado
+    if response.status_code == 200:
         resultado_label.config(text="Arquivo enviado com sucesso!")
     else:
-        # Atualiza o texto do label com o erro
         resultado_label.config(text="Erro ao enviar arquivo: " + response.text)
         print(response.text)
 
-# Função para selecionar o arquivo
+
+# Função para selecionar arquivo
 def selecionar_arquivo():
-    # Abre um diálogo para selecionar o arquivo
-    arquivo_path = filedialog.askopenfilename(title="Selecione o arquivo", filetypes=[("Arquivos PDF", "*.pdf")])
-    
-    # Limpa o campo de texto do arquivo
+    arquivo_path = filedialog.askopenfilename(
+        title="Selecione o arquivo",
+        filetypes=[("Arquivos PDF", "*.pdf")]
+    )
     arquivo_entry.delete(0, tk.END)
-    
-    # Insere o caminho do arquivo no campo de texto
     arquivo_entry.insert(0, arquivo_path)
 
-# Função para enviar o arquivo quando o botão é clicado
+
+# Função que executa o envio
 def enviar():
-    # Obtém o caminho do arquivo e o número do destinatário
     arquivo_path = arquivo_entry.get()
     destinatario = destinatario_entry.get()
-    
-    # Chama a função para enviar o arquivo
-    enviar_arquivo(arquivo_path, destinatario)
+    access_token = token_entry.get()
+    phone_number_id = phone_id_entry.get()
 
-# Cria a janela principal
+    if not arquivo_path or not destinatario or not access_token or not phone_number_id:
+        resultado_label.config(text="Por favor, preencha todos os campos.")
+        return
+
+    enviar_arquivo(arquivo_path, destinatario, access_token, phone_number_id)
+
+
+# Interface Tkinter
 root = tk.Tk()
-root.title("Enviar arquivo via WhatsApp")
+root.title("Enviar PDF via WhatsApp")
 
-# Cria o label e o campo de texto para o arquivo
-arquivo_label = tk.Label(root, text="Arquivo:")
-arquivo_label.grid(row=0, column=0, padx=5, pady=5)
-
+# Linha do arquivo
+tk.Label(root, text="Arquivo:").grid(row=0, column=0, padx=5, pady=5, sticky="e")
 arquivo_entry = tk.Entry(root, width=50)
 arquivo_entry.grid(row=0, column=1, padx=5, pady=5)
+tk.Button(root, text="Selecionar", command=selecionar_arquivo).grid(row=0, column=2, padx=5, pady=5)
 
-# Cria o botão para selecionar o arquivo
-selecionar_button = tk.Button(root, text="Selecionar", command=selecionar_arquivo)
-selecionar_button.grid(row=0, column=2, padx=5, pady=5)
-
-# Cria o label e o campo de texto para o destinatário
-destinatario_label = tk.Label(root, text="Destinatário:")
-destinatario_label.grid(row=1, column=0, padx=5, pady=5)
-
+# Linha do destinatário
+tk.Label(root, text="Destinatário (ex: 5511999999999):").grid(row=1, column=0, padx=5, pady=5, sticky="e")
 destinatario_entry = tk.Entry(root, width=50)
 destinatario_entry.grid(row=1, column=1, padx=5, pady=5)
 
-# Cria o botão para enviar o arquivo
-enviar_button = tk.Button(root, text="Enviar", command=enviar)
-enviar_button.grid(row=2, column=1, padx=5, pady=5)
+# Linha do Token
+tk.Label(root, text="Token de Acesso:").grid(row=2, column=0, padx=5, pady=5, sticky="e")
+token_entry = tk.Entry(root, width=50, show="*")
+token_entry.grid(row=2, column=1, padx=5, pady=5)
 
-# Cria o label para exibir o resultado
+# Linha do Phone Number ID
+tk.Label(root, text="Phone Number ID:").grid(row=3, column=0, padx=5, pady=5, sticky="e")
+phone_id_entry = tk.Entry(root, width=50)
+phone_id_entry.grid(row=3, column=1, padx=5, pady=5)
+
+# Botão enviar
+tk.Button(root, text="Enviar", command=enviar).grid(row=4, column=1, pady=10)
+
+# Resultado
 resultado_label = tk.Label(root, text="")
-resultado_label.grid(row=3, column=1, padx=5, pady=5)
+resultado_label.grid(row=5, column=1, pady=5)
 
-# Inicia a janela principal
 root.mainloop()
